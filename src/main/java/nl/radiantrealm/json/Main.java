@@ -1,4 +1,4 @@
-package nl.radiantrealm;
+package nl.radiantrealm.json;
 
 public class Main {
 
