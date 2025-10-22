@@ -1,6 +1,6 @@
 package nl.radiantrealm.json;
 
-public class JsonException extends Exception {
+public class JsonException extends RuntimeException {
 
     public JsonException() {
         super();
