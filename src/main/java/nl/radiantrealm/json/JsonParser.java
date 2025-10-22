@@ -4,21 +4,245 @@ import java.math.BigDecimal;
 
 public class JsonParser {
     private final String input;
-    private int index = 0;
+    private int index;
 
     public JsonParser(String input) {
         this.input = input;
     }
 
-    public JsonElement parse() throws JsonException {
-        return switch (advance(true)) {
-            case '{' -> getJsonObject();
-            case '[' -> getJsonArray();
-            default -> throw new IllegalArgumentException();
+    public JsonObject getJsonObject() {
+        if (advance(true) == '{') {
+            return getJsonObject(new JsonObject());
+        } else {
+            throw new JsonException("Not a Json Object.");
+        }
+    }
+
+    private JsonObject getJsonObject(JsonObject object) {
+        char c = advance(true);
+
+        return switch (c) {
+            case '"' -> {
+                String key = getJsonString(new StringBuilder());
+
+                c = advance(true);
+
+                if (c != ':') {
+                    throw new JsonException(String.format("Unexpected character '%s' at position %s", c, index));
+                }
+
+                c = advance(true);
+
+                switch (c) {
+                    case '{' -> getJsonObject(new JsonObject());
+                    case '[' -> getJsonArray(new JsonArray());
+                    case '"' -> object.add(key, getJsonString(new StringBuilder()));
+                    case 't', 'f' -> object.add(key, getJsonBoolean(c == 't'));
+                    case 'n' -> object.add(key, getJsonNull());
+                    case '-', '1', '2', '3', '4', '5', '6', '7', '8', '9', '0' -> object.add(key, getJsonNumber(c));
+                    default -> throw new JsonException(String.format("Unexpected character '%s' at position %s", c, index));
+                }
+
+                yield getJsonObject(object);
+            }
+
+            case ',' -> getJsonObject(object);
+            case '}' -> object;
+            default -> throw new JsonException(String.format("Unexpected character '%s' at position %s", c, index));
         };
     }
 
-    public char advance(boolean skipWhiteSpace) {
+    public JsonArray getJsonArray() {
+        if (advance(true) == '[') {
+            return getJsonArray(new JsonArray());
+        } else {
+            throw new JsonException("Not a Json Object.");
+        }
+    }
+
+    public JsonArray getJsonArray(JsonArray array) {
+        char c = advance(true);
+
+        return switch (c) {
+            case '{' -> {
+                array.add(getJsonObject(new JsonObject()));
+                yield getJsonArray(array);
+            }
+
+            case '[' -> {
+                array.add(getJsonArray(new JsonArray()));
+                yield getJsonArray(array);
+            }
+
+            case '"' -> {
+                array.add(getJsonString(new StringBuilder()));
+                yield getJsonArray(array);
+            }
+
+            case 't', 'f' -> {
+                array.add(getJsonBoolean(c == 't'));
+                yield getJsonArray(array);
+            }
+
+            case 'n' -> {
+                array.add(getJsonNull());
+                yield getJsonArray(array);
+            }
+
+            case '-', '1', '2', '3', '4', '5', '6', '7', '8', '9', '0' -> {
+                array.add(getJsonNumber(c));
+                yield getJsonArray(array);
+            }
+
+            case ',' -> getJsonArray(array);
+            case ']' -> array;
+            default -> throw new JsonException(String.format("Unexpected character '%s' at position %s (expected '\"' or '}')", c, index));
+        };
+    }
+
+    private String getJsonString(StringBuilder builder) {
+        char c = advance(false);
+
+        return switch (c) {
+            case '\\' -> {
+                c = advance(false);
+
+                yield switch (c) {
+                    case '"' -> "\"";
+                    case '\\' -> "\\";
+                    case '/' -> "/";
+                    case 'b' -> "\b";
+                    case 'n' -> "\n";
+                    case 'r' -> "\r";
+                    case 't' -> "\t";
+                    case 'f' -> "\f";
+
+                    case 'u' -> {
+                        StringBuilder hexBuilder = new StringBuilder("u");
+
+                        for (int i = 0; i < 4; i++) {
+                            hexBuilder.append(advance(false));
+                        }
+
+                        yield hexBuilder.toString();
+                    }
+
+                    default -> "\\" + c;
+                };
+            }
+
+            case '"' -> builder.toString();
+            default -> getJsonString(builder.append(c));
+        };
+    }
+
+    private boolean getJsonBoolean(boolean state) {
+        StringBuilder builder = new StringBuilder(state ? "t" : "f");
+
+        for (int i = 0; i < (state ? 3 : 4); i++) {
+            char c = peek(false);
+
+            switch (c) {
+                case 'r', 'u', 'e', 'a', 'l', 's' -> {
+                    advance(false);
+                    builder.append(c);
+                }
+
+                default -> throw new JsonException(String.format("Unexpected character '%s' at position %s", c, index));
+            }
+        }
+
+        return switch (builder.toString()) {
+            case "true" -> true;
+            case "false" -> false;
+            default -> throw new IllegalArgumentException("Invalid boolean value.");
+        };
+    }
+
+    private JsonNull getJsonNull() {
+        StringBuilder builder = new StringBuilder("n");
+
+        for (int i = 0; i < 3; i++) {
+            char c = peek(false);
+
+            switch (c) {
+                case 'u', 'l' -> {
+                    advance(false);
+                    builder.append(c);
+                }
+
+                default -> throw new JsonException(String.format("Unexpected character '%s' at position %s", c, index));
+            }
+        }
+
+        if (builder.toString().equals("null")) {
+            return JsonNull.INSTANCE;
+        } else {
+            throw new IllegalArgumentException("Invalid null value.");
+        }
+    }
+
+    public Number getJsonNumber(char firstChar) {
+        return new BigDecimal(getJsonNumber(new StringBuilder(switch (firstChar) {
+            case '-' -> {
+                char c = peek(false);
+
+                int i = Character.getNumericValue(c);
+
+                yield switch (i) {
+                    case 1, 2, 3, 4, 5, 6, 7, 8, 9, 0 -> {
+                        yield String.valueOf(i);
+                    }
+
+                    default -> throw new JsonException(String.format("Unexpected character '%s' at position %s", c, index));
+                };
+            }
+
+            case '1', '2', '3', '4', '5', '6', '7', '8', '9', '0' -> {
+                int i = Character.getNumericValue(firstChar);
+
+                yield switch (i) {
+                    case 1, 2, 3, 4, 5, 6, 7, 8, 9, 0 -> {
+                        yield String.valueOf(i);
+                    }
+
+                    default -> throw new JsonException(String.format("Unexpected character '%s' at position %s", firstChar, index));
+                };
+            }
+            default -> throw new JsonException(String.format("Unexpected character '%s' at position %s", firstChar, index));
+        })));
+    }
+
+    public String getJsonNumber(StringBuilder builder) {
+        char c = peek(false);
+
+        return switch (c) {
+            case '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '.', 'e', 'E', '+', '-' -> {
+                advance(true);
+                yield getJsonNumber(builder.append(c));
+            }
+
+            default -> builder.toString();
+        };
+    }
+
+    private char peek(boolean skipWhiteSpace) {
+        int peekIndex = index;
+
+        if (skipWhiteSpace) {
+            while (peekIndex < input.length() && Character.isWhitespace(input.charAt(peekIndex))) {
+                peekIndex++;
+            }
+        }
+
+        if (peekIndex >= input.length()) {
+            throw new ArrayIndexOutOfBoundsException(String.format("Unexpected end of Json input at position %s", index));
+        }
+
+        return input.charAt(peekIndex);
+    }
+
+    private char advance(boolean skipWhiteSpace) {
         while (index < input.length()) {
             char c = input.charAt(index);
 
@@ -30,229 +254,6 @@ public class JsonParser {
             }
         }
 
-        throw new ArrayIndexOutOfBoundsException("Unexpected end of Json input at index " + index);
-    }
-
-    public char peek(boolean skipWhiteSpace) {
-        int i = index;
-
-        if (skipWhiteSpace) {
-            while (i < input.length() && Character.isWhitespace(input.charAt(i))) {
-                i++;
-            }
-        }
-
-        if (i >= input.length()) {
-            throw new ArrayIndexOutOfBoundsException("Unexpected end of Json input at index " + i);
-        }
-
-        return input.charAt(i);
-    }
-
-    public JsonObject getJsonObject() throws JsonException {
-        if (advance(true) != '{') {
-            throw new JsonException("Not a Json object.");
-        }
-
-        return getJsonObject(new JsonObject());
-    }
-
-    private JsonObject getJsonObject(JsonObject object) throws JsonException {
-        return switch (advance(true)) {
-            case '"' -> {
-                String key = getJsonString(new StringBuilder());
-
-                if (advance(true) != ':') {
-                    throw new JsonException(String.format("Invalid Json format at %s", index));
-                }
-
-                char c = advance(true);
-
-                switch (c) {
-                    case '"' -> object.add(key, getJsonString(new StringBuilder()));
-                    case 't', 'f' -> object.add(key, getJsonBoolean(c == 't'));
-                    case 'n' -> object.add(key, getJsonNull());
-                    case '-', '1', '2', '3', '4', '5', '6', '7', '8', '9', '0' -> {
-                        if (c == '-') {
-                            c = advance(false);
-                        }
-
-                        object.add(key, getJsonNumber(c));
-                    }
-
-                    default -> throw new JsonException("Invalid json element for json object.");
-                }
-
-                yield getJsonObject(object);
-            }
-
-            case ',' -> getJsonObject(object);
-
-            case '}' -> object;
-            default -> throw new JsonException("Reader error.");
-        };
-    }
-
-    public JsonArray getJsonArray() throws JsonException {
-        if (advance(true) != '[') {
-            throw new JsonException("Not a Json array.");
-        }
-
-        return getJsonArray(new JsonArray());
-    }
-
-    private JsonArray getJsonArray(JsonArray array) throws JsonException {
-        if (peek(true) == ']') {
-            advance(true);
-            return array;
-        }
-
-        while (true) {
-            char c = peek(true);
-
-            switch (c) {
-                case '"' -> {
-                    advance(true);
-                    array.add(getJsonString(new StringBuilder()));
-                }
-
-                case 't', 'f' -> {
-                    advance(true);
-                    array.add(getJsonBoolean(c == 't'));
-                }
-
-                case 'n' -> {
-                    advance(true);
-                    array.add(getJsonNull());
-                }
-
-                case '-', '1', '2', '3', '4', '5', '6', '7', '8', '9', '0' -> {
-                    advance(true);
-
-                    if (c == '-') {
-                        c = advance(false);
-                    }
-
-                    array.add(getJsonNumber(c));
-                }
-
-                case '{' -> array.add(getJsonObject());
-                case '[' -> array.add(getJsonArray());
-                default -> {
-                    System.out.println(c);
-                    throw new JsonException("Invalid Json element for Json Array at index " + index);
-                }
-            }
-
-            char next = advance(true);
-
-            if (next == ']') {
-                return array;
-            }
-
-            if (next != ',') {
-                throw new JsonException("Expected a comma or closing bracket in array at index " + index);
-            }
-        }
-
-//        switch (c) {
-//            case '"' -> array.add(getJsonString(new StringBuilder()));
-//            case 't', 'f' -> array.add(getJsonBoolean(c == 't'));
-//            case 'n' -> array.add(getJsonNull());
-//            case '-', '1', '2', '3', '4', '5', '6', '7', '8', '9', '0' -> {
-//                if (c == '-') {
-//                    c = advance(false);
-//                }
-//
-//                array.add(getJsonNumber(c));
-//            }
-//
-//            case '{' -> array.add(getJsonObject(new JsonObject()));
-//            case '[' -> array.add(getJsonArray(new JsonArray()));
-//            case ']' -> {
-//                return array;
-//            }
-//            case ',' -> getJsonArray(array);
-//            default -> throw new JsonException("Invalid Json element for json array.");
-//        }
-//
-//        return getJsonArray(array);
-    }
-
-    private String getJsonString(StringBuilder builder) {
-        char c = advance(false);
-
-        if (c == '"') {
-            return builder.toString();
-        } else {
-            return getJsonString(builder.append(c));
-        }
-    }
-
-    private boolean getJsonBoolean(boolean firstCharacter) throws JsonException {
-        StringBuilder builder = new StringBuilder(firstCharacter ? "T" : "F");
-        builder.append(advance(false));
-        builder.append(advance(false));
-        builder.append(advance(false));
-
-        if (!firstCharacter) {
-            builder.append(advance(false));
-        }
-
-        if (builder.toString().equalsIgnoreCase(String.valueOf(firstCharacter))) {
-            return firstCharacter;
-        } else {
-            throw new JsonException("Invalid boolean value.");
-        }
-    }
-
-    private JsonNull getJsonNull() throws JsonException {
-        StringBuilder builder = new StringBuilder("N");
-        builder.append(advance(false));
-        builder.append(advance(false));
-        builder.append(advance(false));
-
-        if (builder.toString().equalsIgnoreCase("NULL")) {
-            return JsonNull.INSTANCE;
-        } else {
-            throw new JsonException("Invalid null value.");
-        }
-    }
-
-    private Number getJsonNumber(int firstDigit) {
-        String numberString = getJsonNumber(new StringBuilder(String.valueOf(firstDigit)));
-        BigDecimal decimal = new BigDecimal(numberString);
-
-        if (decimal.scale() < 1) {
-            long value = decimal.longValue();
-
-            if (value >= Short.MIN_VALUE && value <= Short.MAX_VALUE) {
-                return (short) value;
-            }
-
-            if (value >= Integer.MIN_VALUE && value <= Integer.MAX_VALUE) {
-                return (int) value;
-            }
-
-            return value;
-        }
-
-        return decimal;
-    }
-
-    private String getJsonNumber(StringBuilder builder) {
-        char c = peek(false);
-
-        return switch (c) {
-            case '.', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9' -> {
-                if (index++ >= input.length()) {
-                    throw new ArrayIndexOutOfBoundsException();
-                }
-
-                yield getJsonNumber(builder.append(c));
-            }
-
-            default -> builder.toString();
-        };
+        throw new ArrayIndexOutOfBoundsException(String.format("Unexpected end of Json input at position %s", index));
     }
 }
