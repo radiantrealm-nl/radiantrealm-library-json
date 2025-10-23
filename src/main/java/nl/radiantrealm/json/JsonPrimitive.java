@@ -5,7 +5,7 @@ import java.util.Objects;
 import java.util.UUID;
 
 public class JsonPrimitive extends JsonElement {
-    private final Object object;
+    public final Object object;
 
     public JsonPrimitive(Boolean bool) {
         this.object = Objects.requireNonNull(bool);
@@ -62,10 +62,6 @@ public class JsonPrimitive extends JsonElement {
             case Boolean bool -> String.valueOf(bool);
             default -> throw new AssertionError(String.format("Unexpected value type: '%s'.", object.getClass()));
         };
-    }
-
-    public boolean isString() {
-        return object instanceof String;
     }
 
     @Override
