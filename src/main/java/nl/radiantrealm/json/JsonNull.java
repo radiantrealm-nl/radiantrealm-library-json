@@ -7,4 +7,9 @@ public class JsonNull extends JsonElement {
     public JsonElement deepCopy() {
         return INSTANCE;
     }
+
+    @Override
+    protected String toString(StringBuilder builder, boolean prettyPrint) {
+        return "null";
+    }
 }
