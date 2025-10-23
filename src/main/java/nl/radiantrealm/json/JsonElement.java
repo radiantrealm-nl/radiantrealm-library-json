@@ -1,12 +1,66 @@
 package nl.radiantrealm.json;
 
 import java.math.BigDecimal;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 public abstract class JsonElement {
 
     public abstract JsonElement deepCopy();
+
+    @Override
+    public String toString() {
+        return toString(new StringBuilder(), false);
+    }
+
+    public String toString(boolean prettyPrinting) {
+        return toString(new StringBuilder(), prettyPrinting);
+    }
+
+    protected String toString(StringBuilder builder, boolean prettyPrint) {
+        return switch (this) {
+            case JsonArray array -> {
+                builder.append(prettyPrint ? "[\n" : '[');
+                Set<String> strings = new HashSet<>(array.size());
+
+                for (JsonElement element : array) {
+                    strings.add(String.format(element.toString(new StringBuilder(), prettyPrint)));
+                }
+
+                builder.append(String.join(prettyPrint ? ",\n" : ",", strings));
+                yield builder.append(prettyPrint ? "\n]" : ']').toString();
+            }
+
+            case JsonObject object -> {
+                builder.append(prettyPrint ? "{\n" : '{');
+                Set<String> strings = new HashSet<>(object.size());
+
+                for (Map.Entry<String, JsonElement> entry : object.entrySet()) {
+                    strings.add(String.format(
+                            "\"%s\"%s%s",
+                            entry.getKey(),
+                            prettyPrint ? ": " : ':',
+                            entry.getValue().toString(new StringBuilder(), prettyPrint))
+                    );
+                }
+
+                builder.append(String.join(prettyPrint ? ",\n" : ",", strings));
+                yield builder.append('}').toString();
+            }
+
+            case JsonPrimitive primitive -> switch (primitive.object) {
+                case Boolean bool -> builder.append(bool).toString();
+                case Number number -> builder.append(number).toString();
+                case String string -> builder.append(String.format("\"%s\"", string)).toString();
+                default -> throw new IllegalArgumentException("Unknown Json primitive type.");
+            };
+
+            case JsonNull jsonNull -> builder.append(jsonNull).toString();
+            default -> throw new IllegalStateException();
+        };
+    }
 
     public JsonArray getAsJsonArray() {
         if (this instanceof JsonArray jsonArray) {
@@ -78,48 +132,5 @@ public abstract class JsonElement {
 
     public BigDecimal getAsBigDecimal() {
         throw new UnsupportedOperationException(getClass().getSimpleName());
-    }
-
-    @Override
-    public String toString() {
-        StringBuilder sb = new StringBuilder();
-        writeJson(this, sb);
-        return sb.toString();
-    }
-
-    private void writeJson(JsonElement element, StringBuilder sb) {
-        if (element == null || element.isJsonNull()) {
-            sb.append("null");
-        } else if (element.isJsonPrimitive()) {
-            JsonPrimitive prim = element.getAsJsonPrimitive();
-            if (prim.isString()) {
-                sb.append('"').append(escape(prim.getAsString())).append('"');
-            } else {
-                sb.append(prim.getAsString()); // number/boolean
-            }
-        } else if (element.isJsonObject()) {
-            sb.append("{");
-            boolean first = true;
-            for (Map.Entry<String, JsonElement> e : element.getAsJsonObject().entrySet()) {
-                if (!first) sb.append(",");
-                sb.append('"').append(escape(e.getKey())).append('"').append(":");
-                writeJson(e.getValue(), sb);
-                first = false;
-            }
-            sb.append("}");
-        } else if (element.isJsonArray()) {
-            sb.append("[");
-            boolean first = true;
-            for (JsonElement e : element.getAsJsonArray()) {
-                if (!first) sb.append(",");
-                writeJson(e, sb);
-                first = false;
-            }
-            sb.append("]");
-        }
-    }
-
-    private String escape(String s) {
-        return s.replace("\"", "\\\"").replace("\n", "\\n"); // minimal escaping
     }
 }

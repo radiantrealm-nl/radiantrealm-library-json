@@ -16,6 +16,10 @@ public class JsonObject extends JsonElement {
 
     @Override
     public JsonElement deepCopy() {
+        if (map.isEmpty()) {
+            return new JsonObject();
+        }
+
         JsonObject object = new JsonObject(map.size());
 
         for (Map.Entry<String, JsonElement> entry : map.entrySet()) {
@@ -95,6 +99,10 @@ public class JsonObject extends JsonElement {
 
     public int size() {
         return map.size();
+    }
+
+    public boolean isEmpty() {
+        return map.isEmpty();
     }
 
     public void clear() {
